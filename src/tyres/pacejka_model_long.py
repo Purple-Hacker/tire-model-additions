@@ -6,7 +6,9 @@ from scipy.io import loadmat, savemat
 from scipy.optimize import least_squares
 from pathlib import Path
 
-TYRE_DATA_PATH = Path("../../data/tyres/RunData_DriveBrake_Matlab_SI_Round9").expanduser().resolve()
+ROOT = Path(__file__).resolve().parents[2]  # repo root
+
+TYRE_DATA_PATH = ROOT / "data/tyres/RunData_DriveBrake_Matlab_SI_Round9"
 
 # tire filter — Hoosier 43100 18.0x6.0-10 R20, 7" rim
 TIRE_ID_SUBSTRINGS = ["43100", "18.0x6.0", "7 inch rim"]
@@ -15,6 +17,7 @@ FZ_MIN, FZ_MAX = 100.0, 1300.0   # [N] valid load window
 SR_MAX = 0.15                     # [-] valid slip ratio window (unitless, not degrees)
 PRESSURE_TARGET = 83.0           # [kPa]
 PRESSURE_TOL = 5.0               # [kPa]
+V_MIN = 10.0                     # [kph] drop stopped / creep segments (belt not rolling)
 DECIMATE = 3                     # keep every Nth sample after filtering
 
 _data_cache = None
@@ -40,7 +43,7 @@ def load_data():
     if not run_files:
         raise FileNotFoundError(f"no B2356run*.mat files found in '{TYRE_DATA_PATH}'")
 
-    sr_list, fx_list, fz_list, ia_list, p_list = [], [], [], [], []
+    sr_list, fx_list, fz_list, ia_list, p_list, v_list = [], [], [], [], [], []
 
     print("loading hoosier 43100 18.0x6.0-10 r20 (7 inch rim) runs...")
     for fpath in run_files:
@@ -49,12 +52,13 @@ def load_data():
         if not all(sub in tire_str for sub in TIRE_ID_SUBSTRINGS):
             continue
 
-        d = loadmat(fpath, variable_names=["SR", "FX", "FZ", "IA", "P"])
+        d = loadmat(fpath, variable_names=["SR", "FX", "FZ", "IA", "P", "V"])
         sr_list.append(np.asarray(d["SR"]).squeeze())
         fx_list.append(np.asarray(d["FX"]).squeeze())
         fz_list.append(np.asarray(d["FZ"]).squeeze())
         ia_list.append(np.asarray(d["IA"]).squeeze())
         p_list.append(np.asarray(d["P"]).squeeze())
+        v_list.append(np.asarray(d["V"]).squeeze())
         print(f"  loaded: {os.path.basename(fpath)}  ({tire_str})")
 
     if not sr_list:
@@ -68,6 +72,7 @@ def load_data():
     FZ_all = np.concatenate(fz_list)
     IA_all = np.concatenate(ia_list)
     P_all = np.concatenate(p_list)
+    V_all = np.concatenate(v_list)
 
     print(f"total raw data points: {len(SR_all)}\n")
 
@@ -78,6 +83,7 @@ def load_data():
         & (np.abs(SR_all) < SR_MAX)
         & (SR_all >= 0)
         & (np.abs(P_all - PRESSURE_TARGET) < PRESSURE_TOL)
+        & (V_all > V_MIN)
     )
 
     SR = SR_all[valid][::DECIMATE]
@@ -236,7 +242,7 @@ def generate_coeffs(n_starts=8, seed=0):
     for name, val in zip(coeff_names, p_fit):
         print(f"  {name:<14} = {val:12.6f}")
 
-    savemat(Path("../../data/coeffs/hoosier_r20_tire_params_long.mat").expanduser().resolve(), {
+    savemat(ROOT / "data/coeffs/hoosier_r20_tire_params_long.mat", {
         "coeffs": p_fit,
         "coeff_names": coeff_names,
         "rms_error_N": rms_err,
@@ -284,7 +290,7 @@ def plot_fx_vs_sr(fn_buckets):
     ax.legend(loc="best")
     ax.grid(True)
     plt.tight_layout()
-    fig.savefig(Path(f"../../figures/tyres/Fx vs SR (long).png").expanduser().resolve(), dpi=150)
+    fig.savefig(ROOT / "figures/tyres/Fx vs SR (long).png", dpi=150)
     plt.close(fig)
 
 
@@ -310,7 +316,7 @@ def plot_fx_vs_fn(sr_buckets):
     ax.legend(loc="best")
     ax.grid(True)
     plt.tight_layout()
-    fig.savefig(Path(f"../../figures/tyres/Fx vs Fn (long).png").expanduser().resolve(), dpi=150)
+    fig.savefig(ROOT / "figures/tyres/Fx vs Fn (long).png", dpi=150)
     plt.close(fig)
 
 

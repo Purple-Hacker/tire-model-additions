@@ -4,6 +4,8 @@ from scipy.io import loadmat
 from scipy.optimize import minimize_scalar
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]  # repo root
+
 G = 9.81  # m/s^2
 
 TOTAL_CAR_MASS = 288
@@ -28,9 +30,9 @@ INITIAL_BRAKE_ACCEL = 1.2
 
 CONVERGENCE_TOL = 0.005
 
-PACEJKA_BRAKE_COEFFS_PATH = Path("../data/coeffs/hoosier_r20_tire_params_brake.mat").expanduser().resolve()
-PACEJKA_LONG_COEFFS_PATH = Path("../data/coeffs/hoosier_r20_tire_params_long.mat").expanduser().resolve()
-PACEJKA_LAT_COEFFS_PATH = Path("../data/coeffs/hoosier_r20_tire_params_lat.mat").expanduser().resolve()
+PACEJKA_BRAKE_COEFFS_PATH = ROOT / "data/coeffs/hoosier_r20_tire_params_brake.mat"
+PACEJKA_LONG_COEFFS_PATH = ROOT / "data/coeffs/hoosier_r20_tire_params_long.mat"
+PACEJKA_LAT_COEFFS_PATH = ROOT / "data/coeffs/hoosier_r20_tire_params_lat.mat"
 
 # For typical SA and SR values
 LAT_ACCEL_SA = 5

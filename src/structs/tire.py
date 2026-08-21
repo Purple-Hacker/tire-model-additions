@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from scipy.io import loadmat
 import math
+
+from utils.constants import MU_SCALE
 
 """
 Pacejka BNP 1989 Magic Formula Structure
@@ -53,12 +56,14 @@ class Tire:
     )
 
     def load_coefficients(self, path: str | Path) -> None:
-        """Load fitted Pacejka BNP 1989 coefficients from a .mat file produced
-        by hoosier_r20_tire_model_lat.m (the `tireParams` struct).
+        """Load fitted Pacejka BNP 1989 coefficients from a .mat file.
 
-        Expects `tireParams.coeffs` to hold a0..a13 (14 values) and
-        `tireParams.rms_error_N` for fit quality. Populates self.coeffs as a
-        name -> value dict for easy access (e.g. self.coeffs["a3"]).
+        Accepts both layouts: the flat one written by src/tyres/pacejka_model_*.py
+        (top-level `coeffs`) and the legacy MATLAB `tireParams` struct. Populates
+        self.coeffs as a name -> value dict, e.g. self.coeffs["a3"].
+
+        Coefficients are raw TTC -- the friction derate lives in MU_SCALE, applied
+        at force evaluation, not here.
         """
         path = Path(path)
         if not path.exists():
@@ -66,14 +71,20 @@ class Tire:
 
         mat = loadmat(path, struct_as_record=False, squeeze_me=True)
 
-        if "tireParams" not in mat:
+        if "tireParams" in mat:
+            src = mat["tireParams"]
+            raw_coeffs = src.coeffs
+            get = lambda k, d: getattr(src, k, d)
+        elif "coeffs" in mat:
+            raw_coeffs = mat["coeffs"]
+            get = lambda k, d: mat.get(k, d)
+        else:
             raise KeyError(
-                f"Expected top-level variable 'tireParams' in {path}, "
-                f"found: {list(mat.keys())}"
+                f"Expected 'coeffs' or 'tireParams' in {path}, "
+                f"found: {[k for k in mat if not k.startswith('__')]}"
             )
 
-        tire_params = mat["tireParams"]
-        raw_coeffs = tire_params.coeffs
+        raw_coeffs = np.asarray(raw_coeffs).squeeze()
 
         if len(raw_coeffs) != len(self.COEFF_NAMES):
             raise ValueError(
@@ -84,8 +95,8 @@ class Tire:
             )
 
         self.coeffs = dict(zip(self.COEFF_NAMES, raw_coeffs.tolist()))
-        self.coeff_source = str(getattr(tire_params, "tire", path.name))
-        self.coeff_rms_error_n = float(getattr(tire_params, "rms_error_N", float("nan")))
+        self.coeff_source = str(get("tire", path.name))
+        self.coeff_rms_error_n = float(get("rms_error_N", float("nan")))
 
     def lat_force(self, vertical_load: float, camber_angle: float, slip_angle: float) -> float:
         """Pacejka BNP 1989 lateral force model.
@@ -99,8 +110,8 @@ class Tire:
             slip_angle: slip angle, deg (alpha)
 
         Returns:
-            Fy, N. Sign follows the SAE convention baked into the fit
-            (D is negative -- see stage-1 fitting notes in the .m script).
+            Fy, N, scaled by MU_SCALE. Sign follows the SAE convention baked
+            into the fit (D is negative -- see stage-1 fitting notes).
         """
         if self.coeffs is None:
             raise RuntimeError("Tire coefficients not loaded -- call load_coefficients() first")
@@ -122,7 +133,11 @@ class Tire:
         B = BCD / (C * D)
 
         phi = slip_angle + SH
-        return D * math.sin(C * math.atan(B * phi - E * (B * phi - math.atan(B * phi)))) + SV
+        fy = D * math.sin(C * math.atan(B * phi - E * (B * phi - math.atan(B * phi)))) + SV
+
+        # derate from the ttc 3m belt to real asphalt -- coeffs are raw ttc
+        return MU_SCALE * fy
 
     def long_force(self, vertical_load: float, camber_angle: float, slip_ratio: float) -> float:
-        
+                # TODO: implement, mirroring lat_force. remember the MU_SCALE derate.
+        raise NotImplementedError
